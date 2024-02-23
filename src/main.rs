@@ -1,17 +1,17 @@
 // A simple application to track workouts that I've done.
-// Requires args in form of Strings/or custom types to be inputed via CLI, which will be stored in a database
-// (possibly SQLite because it's well documented and versital)
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use bonsaidb::{
     core::{
         connection::StorageConnection,
-        document::CollectionDocument,
-        key::Key,
-        schema::{Collection, SerializedCollection},
+        document::{CollectionDocument, Emit},
+        schema::{
+            Collection, CollectionMapReduce, ReduceResult, View, ViewMapResult, ViewMappedValue,
+            ViewSchema,
+        },
     },
     local::{
         config::{Builder, StorageConfiguration},
-        Database, Storage, StorageNonBlocking,
+        Storage,
     },
 };
 
@@ -19,15 +19,47 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_DB_PATH: &str = "./gymtracker";
 
-// Key to pull user's relative data.
-#[derive(Key, Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct User {
-    pub name: String,
+#[derive(Debug, Clone, View, ViewSchema, PartialEq)]
+#[view(collection = WorkoutInputs, key = String, value = (String, String, u8, String, u8), name = "by-name")]
+pub struct UserView;
+impl CollectionMapReduce for UserView {
+    fn map<'doc>(
+        &self,
+        document: CollectionDocument<WorkoutInputs>,
+    ) -> ViewMapResult<'doc, Self::View> {
+        document.header.emit_key_and_value(
+            document.contents.name,
+            (
+                document.contents.date,
+                document.contents.time,
+                document.contents.body_weight,
+                document.contents.muscle_group,
+                document.contents.intensity,
+            ),
+        )
+    }
+
+    fn reduce(
+        &self,
+        mappings: &[ViewMappedValue<'_, Self>],
+        _rereduce: bool,
+    ) -> ReduceResult<Self::View> {
+        let mut user = mappings[0].key;
+        let mut workout_info: (String, String, u8, String, u8) = mappings[0].value;
+        for mapping in mappings.iter() {
+            if mapping.key == user {
+                user = mapping.key;
+                workout_info = mapping.value;
+            }
+        }
+        Ok(workout_info)
+    }
 }
 
-#[derive(Collection, Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
-#[collection(name= "workout-data", primary_key= User)]
+#[derive(Collection, Serialize, Deserialize, Clone, Debug)]
+#[collection(name= "workout-data", views = [UserView])]
 pub struct WorkoutInputs {
+    name: String,
     date: String,         //00-00-0000
     time: String,         //00:00-00:00
     body_weight: u8,      //000LBS ('merica)
@@ -41,31 +73,34 @@ fn open_storage(path: &String) -> Result<Storage> {
     )?)
 }
 
-fn get_data(key: &User, storage_connection: &Storage) -> Result<CollectionDocument<WorkoutInputs>> {
-    let db = storage_connection.database::<WorkoutInputs>("workout-data")?;
-    WorkoutInputs::get(&key, &db)
-        .map_err(|e| anyhow::anyhow!("failed to open document: {e:?}"))?
-        .ok_or(anyhow::anyhow!(
-            "failed to retrieve workout data for user '{:?}' at database path '{:?}'",
-            &key,
-            &storage_connection.path()
-        ))
-}
+// fn get_data(
+//     key: &UserView,
+//     storage_connection: &Storage,
+// ) -> Result<CollectionDocument<WorkoutInputs>> {
+//     let db = storage_connection.database::<WorkoutInputs>("workout-data")?;
+//     WorkoutInputs::get(&key, &db)
+//         .map_err(|e| anyhow::anyhow!("failed to open document: {e:?}"))?
+//         .ok_or(anyhow::anyhow!(
+//             "failed to retrieve workout data for user '{:?}' at database path '{:?}'",
+//             &key,
+//             &storage_connection.path()
+//         ))
+// }
 
-fn insert_test_data(account_connection: &Database) -> Result<()> {
-    let key = User {
-        name: "Andrewvios".to_string(),
-    };
-    WorkoutInputs {
-        date: "2-22-2024".to_string(),
-        time: "9:30-12:00".to_string(),
-        body_weight: 138,
-        muscle_group: "Back, Biceps, Shoulders".to_string(),
-        intensity: 9,
-    }
-    .insert_into(&key, account_connection)?;
-    Ok(())
-}
+// fn insert_test_data(account_connection: &Database) -> Result<()> {
+//     let key = User {
+//         name: "Bryant".to_string(),
+//     };
+//     WorkoutInputs {
+//         date: "2-22-2024".to_string(),
+//         time: "7:00-9:00".to_string(),
+//         body_weight: 190,
+//         muscle_group: "Legs".to_string(),
+//         intensity: 6,
+//     }
+//     .insert_into(&key, account_connection)?;
+//     Ok(())
+// }
 
 fn main() -> Result<()> {
     let storage_connection =
@@ -76,7 +111,7 @@ fn main() -> Result<()> {
     insert_test_data(&workout_connection)?;
 
     let key = User {
-        name: "Andrewvious".to_string(),
+        name: "Andrew O".to_string(),
     };
 
     let retrieved = get_data(&key, &storage_connection)?;
@@ -91,7 +126,7 @@ fn read_db() -> Result<()> {
     let storage_connection =
         open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
     let key = User {
-        name: "Andrewvious".to_string(),
+        name: "Andrew O".to_string(),
     };
 
     let retrieved = get_data(&key, &storage_connection)?;
