@@ -14,10 +14,34 @@ use bonsaidb::{
         Storage,
     },
 };
-
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_DB_PATH: &str = "./gymtracker";
+
+#[derive(Clone, Parser, Debug)]
+pub struct ReadWriteOpts {
+    #[clap(short, long)]
+    pub dbpath: String,
+
+    #[clap(short, long)]
+    pub name: String,
+
+    #[clap(short, long)]
+    pub date: String,
+
+    #[clap(short, long)]
+    pub time: String,
+
+    #[clap(short, long)]
+    pub body_weight: f32,
+
+    #[clap(short, long)]
+    pub muscle_group: String,
+
+    #[clap(short, long)]
+    pub intensity: u8,
+}
 
 #[derive(Debug, Clone, Copy, View, ViewSchema, PartialEq)]
 #[view(collection = WorkoutInputs, key = String, value = (String, String, f32, String, u8), name = "by-name")]
@@ -56,7 +80,7 @@ impl CollectionMapReduce for UserView {
     }
 }
 
-#[derive(Collection, Serialize, Deserialize, Clone, Debug)]
+#[derive(Collection, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[collection(name= "workout-data", views = [UserView])]
 pub struct WorkoutInputs {
     name: String,
@@ -96,9 +120,9 @@ fn open_storage(path: &String) -> Result<Storage> {
     )?)
 }
 
-//Going to update this to reflect the method I used in the `print_more` test fn.
+//Still looking for a way to `get` all data with this method.
 #[allow(dead_code)]
-fn get_workout_data(
+fn get_latest_data(
     storage_connection: &Storage,
 ) -> Result<(String, (String, String, f32, String, u8))> {
     let workout_db = storage_connection.database::<WorkoutInputs>("workout-data")?;
@@ -106,7 +130,7 @@ fn get_workout_data(
     let workout_view = UserView::entries(&workout_db).ascending().query()?;
 
     let workout_doc = workout_view
-        .first() //this is where I need to get full scope of all data inserted
+        .last() //this is where I need to get full scope of all data inserted if possible.
         .expect("Found empty data for user inputed, insert data and try again.");
 
     let name = &workout_doc.key;
@@ -123,27 +147,8 @@ fn get_workout_data(
     ))
 }
 
-fn main() -> Result<()> {
-    let storage_connection =
-        open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
-    let workout_connection =
-        storage_connection.create_database::<WorkoutInputs>("workout-data", true)?;
-
-    WorkoutInputs::insert(
-        &workout_connection,
-        "Andrew O".to_string(),
-        "2-20-2024".to_string(),
-        "19:30-22:30".to_string(),
-        138.0,
-        "Back, Arms".to_string(),
-        8,
-    )?;
-
-    Ok(())
-}
-
-#[test]
-fn print_more() -> Result<()> {
+#[allow(dead_code)]
+fn print_all_data() -> Result<()> {
     let storage_connection =
         open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
     let workout_db = storage_connection.database::<WorkoutInputs>("workout-data")?;
@@ -156,14 +161,33 @@ fn print_more() -> Result<()> {
         println!(
             "Retrieved workout tracked for {}: 
 
-            \"date: {}\" 
-            \"time: {}\" 
-            \"body weight: {}\" 
-            \"muscle group trained: {}\" 
-            \"intensity of workout: {}\"
+            date: {} 
+            time: {}
+            body weight: {}
+            muscle group trained: {}
+            intensity of workout: {}
             ",
             data.name, data.date, data.time, data.body_weight, data.muscle_group, data.intensity
         );
     }
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    let storage_connection =
+        open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
+    let workout_connection =
+        storage_connection.create_database::<WorkoutInputs>("workout-data", true)?;
+
+    WorkoutInputs::insert(
+        &workout_connection,
+        "Andrew O".to_string(),
+        "2-24-2024".to_string(),
+        "13:00-14:30".to_string(),
+        138.0,
+        "Chest, Triceps".to_string(),
+        4,
+    )?;
+
     Ok(())
 }
