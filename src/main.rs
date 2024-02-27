@@ -20,36 +20,20 @@ use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_DB_PATH: &str = "./gymtracker";
 
-#[derive(Debug, Parser)]
-#[clap(author, version, about)]
+#[derive(Debug, Parser, PartialEq)]
+#[clap(
+    name = "gymtracker",
+    version = "1.0",
+    about = "A simple application to track workout's"
+)]
 pub struct GymtrackerArgs {
-    #[clap(short = 'u', long = "user")]
-    /// User's name.
-    pub user: String,
-
-    #[clap(short = 'd', long = "date")]
-    /// Date of training.
-    pub date: String,
-
-    #[clap(short = 't', long = "time")]
-    /// Start and Stop time of training
-    pub time: String,
-
-    #[clap(short = 'w', long = "body_weight")]
-    /// Current body weight.
-    pub body_weight: f32,
-
-    #[clap(short = 'm', long = "muscle_group")]
-    /// Muscle group that was exercised.
-    pub muscle_group: String,
-
-    #[clap(short = 'i', long = "intensity")]
-    /// Intensity of training.
-    pub intensity: u8,
+    #[clap(short = 'r', long = "read")]
+    /// Read db from user_first key.
+    pub read: String,
 }
 
 #[derive(Debug, Clone, Copy, View, ViewSchema, PartialEq)]
-#[view(collection = WorkoutInputs, key = String, value = (String, String, f32, String, u8), name = "by-user")]
+#[view(collection = WorkoutInputs, key = String, value = (String, String, f32, String, u8), name = "by-user-name")]
 pub struct UserView;
 impl CollectionMapReduce for UserView {
     fn map<'doc>(
@@ -57,7 +41,7 @@ impl CollectionMapReduce for UserView {
         document: CollectionDocument<WorkoutInputs>,
     ) -> ViewMapResult<'doc, Self::View> {
         document.header.emit_key_and_value(
-            document.contents.user,
+            document.contents.user_first,
             (
                 document.contents.date,
                 document.contents.time,
@@ -73,11 +57,11 @@ impl CollectionMapReduce for UserView {
         mappings: &[ViewMappedValue<'_, Self>],
         _rereduce: bool,
     ) -> ReduceResult<Self::View> {
-        let mut user = &mappings[0].key;
+        let mut user_first = &mappings[0].key;
         let mut workout_info: &(String, String, f32, String, u8) = &mappings[0].value;
         for mapping in mappings.iter() {
-            if &mapping.key == user {
-                user = &mapping.key;
+            if &mapping.key == user_first {
+                user_first = &mapping.key;
                 workout_info = &mapping.value;
             }
         }
@@ -88,7 +72,7 @@ impl CollectionMapReduce for UserView {
 #[derive(Collection, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[collection(name= "workout-data", views = [UserView])]
 pub struct WorkoutInputs {
-    user: String,
+    user_first: String,
     date: String,         //00-00-0000
     time: String,         //00:00-00:00
     body_weight: f32,     //000.0LBS ('merica)
@@ -99,7 +83,7 @@ pub struct WorkoutInputs {
 impl WorkoutInputs {
     pub fn insert<C: Connection>(
         connection: &C,
-        user: String,
+        user_first: String,
         date: String,
         time: String,
         body_weight: f32,
@@ -107,7 +91,7 @@ impl WorkoutInputs {
         intensity: u8,
     ) -> Result<(), bonsaidb::core::Error> {
         WorkoutInputs {
-            user,
+            user_first,
             date,
             time,
             body_weight,
@@ -125,7 +109,6 @@ fn open_storage(path: &String) -> Result<Storage> {
     )?)
 }
 
-#[allow(dead_code)]
 fn insert_data() {
     let storage_connection =
         open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
@@ -135,7 +118,7 @@ fn insert_data() {
 
     WorkoutInputs::insert(
         &workout_connection,
-        "Andrew O".to_string(),
+        "Andrew".to_string(),
         "2-24-2024".to_string(),
         "13:00-14:30".to_string(),
         138.0,
@@ -158,10 +141,10 @@ fn get_latest_data(
         .last() //this is where I need to get full scope of all data inserted if possible.
         .expect("Found empty data for user inputed, insert data and try again.");
 
-    let user = &workout_doc.key;
+    let user_first = &workout_doc.key;
     let (date, time, body_weight, muscle_group, intensity) = &workout_doc.value;
     Ok((
-        user.to_string(),
+        user_first.to_string(),
         (
             date.to_string(),
             time.to_string(),
@@ -172,19 +155,18 @@ fn get_latest_data(
     ))
 }
 
-#[allow(dead_code)]
-fn print_all_data() -> Result<()> {
+fn print_all_data(opts: &GymtrackerArgs) -> Result<()> {
     let storage_connection =
         open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
     let workout_db = storage_connection.database::<WorkoutInputs>("workout-data")?;
     let user_data = workout_db
         .view::<UserView>()
-        .with_key("Andrew O")
+        .with_key(&opts.read.to_string())
         .query_with_docs()?;
     for mapping in &user_data {
         let data = WorkoutInputs::document_contents(mapping.document)?;
         println!(
-            "Retrieved workout tracked for user {}: 
+            "Retrieved workout tracked for user_first {}: 
 
             date: {} 
             time: {}
@@ -192,7 +174,12 @@ fn print_all_data() -> Result<()> {
             muscle group trained: {}
             intensity of workout: {}
             ",
-            data.user, data.date, data.time, data.body_weight, data.muscle_group, data.intensity
+            data.user_first,
+            data.date,
+            data.time,
+            data.body_weight,
+            data.muscle_group,
+            data.intensity
         );
     }
     Ok(())
@@ -200,4 +187,11 @@ fn print_all_data() -> Result<()> {
 
 fn main() {
     let args = GymtrackerArgs::parse();
+
+    print_all_data(&args).unwrap();
+}
+
+#[test]
+fn push_to_db() {
+    insert_data();
 }
