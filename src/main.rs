@@ -27,10 +27,74 @@ pub const DEFAULT_DB_PATH: &str = "./gymtracker";
     about = "A simple application to track workout's"
 )]
 pub struct GymtrackerArgs {
-    #[clap(short = 'r', long = "read")]
-    /// Read db from user_first key.
-    pub read: String,
+    #[clap(subcommand)]
+    pub user_method: MethodType,
 }
+
+#[derive(Debug, Subcommand, PartialEq)]
+pub enum MethodType {
+    /// Print workout logs for user defined.
+    Read { username: String },
+    // /// Create, or Insert workout log to database.
+    Write {
+        /// User's first name
+        username: String,
+        /// Date of training session
+        date: String,
+        /// time of training session
+        time: String,
+        /// Weight of user
+        body_weight: f32,
+        /// Muscle's trained during session
+        muscle_group: String,
+        /// Intensity of training session
+        intensity: u8,
+    },
+}
+
+// #[derive(Debug, Args, PartialEq)]
+// pub struct ReadCommand {
+//     #[clap(subcommand)]
+//     pub command: ReadSubcommand,
+// }
+
+// #[derive(Debug, Subcommand, PartialEq)]
+// pub enum ReadSubcommand {
+//     Read(ReadUser),
+// }
+
+// #[derive(Debug, Args, PartialEq)]
+// pub struct ReadUser {
+//     /// User first name, used as key for DB.
+//     pub name: String,
+// }
+
+// #[derive(Debug, Args, PartialEq)]
+// pub struct WriteCommand {
+//     #[clap(subcommand)]
+//     pub command: WriteSubcommand,
+// }
+
+// #[derive(Debug, Subcommand, PartialEq)]
+// pub enum WriteSubcommand {
+//     Write(WriteUser),
+// }
+
+// #[derive(Debug, Args, PartialEq)]
+// pub struct WriteUser {
+//     /// User's first name
+//     pub name: String,
+//     /// Date of training session
+//     pub date: String,
+//     /// time of training session
+//     pub time: String,
+//     /// Weight of user
+//     pub body_weight: f32,
+//     /// Muscle's trained during session
+//     pub muscle_group: String,
+//     /// Intensity of training session
+//     pub intensity: u8,
+// }
 
 #[derive(Debug, Clone, Copy, View, ViewSchema, PartialEq)]
 #[view(collection = WorkoutInputs, key = String, value = (String, String, f32, String, u8), name = "by-user-name")]
@@ -67,6 +131,15 @@ impl CollectionMapReduce for UserView {
         }
         Ok(workout_info.clone())
     }
+}
+
+pub struct UserInputs {
+    user_first: String,
+    date: String,         //00-00-0000
+    time: String,         //00:00-00:00
+    body_weight: f32,     //000.0LBS ('merica)
+    muscle_group: String, //Back, Bicep
+    intensity: u8,        //1-10 intensity of training (be real)
 }
 
 #[derive(Collection, Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -118,7 +191,7 @@ fn insert_data() {
 
     WorkoutInputs::insert(
         &workout_connection,
-        "Andrew".to_string(),
+        "Andrew O".to_string(),
         "2-24-2024".to_string(),
         "13:00-14:30".to_string(),
         138.0,
@@ -126,6 +199,64 @@ fn insert_data() {
         4,
     )
     .expect("Failed to insert into database. Check inputs.");
+}
+
+fn print_all_data(username: &str) -> Result<()> {
+    let storage_connection =
+        open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
+    let workout_db = storage_connection.database::<WorkoutInputs>("workout-data")?;
+    let user_data = workout_db
+        .view::<UserView>()
+        .with_key(username)
+        .query_with_docs()?;
+    for mapping in &user_data {
+        let data = WorkoutInputs::document_contents(mapping.document)?;
+        println!(
+            "Retrieved workout tracked for user {}:
+
+            date: {}
+            time: {}
+            body weight: {}
+            muscle group trained: {}
+            intensity of workout: {}
+            ",
+            data.user_first,
+            data.date,
+            data.time,
+            data.body_weight,
+            data.muscle_group,
+            data.intensity
+        );
+    }
+    Ok(())
+}
+
+use crate::MethodType::{Read, Write};
+
+fn run(args: GymtrackerArgs) {
+    match args.user_method {
+        Read { username } => print_all_data(&username),
+        Write {
+            username,
+            date,
+            time,
+            body_weight,
+            muscle_group,
+            intensity,
+        } => todo!(),
+    }
+    .unwrap();
+}
+
+fn main() {
+    let args = GymtrackerArgs::parse();
+
+    run(args);
+}
+
+#[test]
+fn push_to_db() {
+    insert_data();
 }
 
 //Still looking for a way to `get` all data with this method.
@@ -153,45 +284,4 @@ fn get_latest_data(
             *intensity,
         ),
     ))
-}
-
-fn print_all_data(opts: &GymtrackerArgs) -> Result<()> {
-    let storage_connection =
-        open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
-    let workout_db = storage_connection.database::<WorkoutInputs>("workout-data")?;
-    let user_data = workout_db
-        .view::<UserView>()
-        .with_key(&opts.read.to_string())
-        .query_with_docs()?;
-    for mapping in &user_data {
-        let data = WorkoutInputs::document_contents(mapping.document)?;
-        println!(
-            "Retrieved workout tracked for user_first {}: 
-
-            date: {} 
-            time: {}
-            body weight: {}
-            muscle group trained: {}
-            intensity of workout: {}
-            ",
-            data.user_first,
-            data.date,
-            data.time,
-            data.body_weight,
-            data.muscle_group,
-            data.intensity
-        );
-    }
-    Ok(())
-}
-
-fn main() {
-    let args = GymtrackerArgs::parse();
-
-    print_all_data(&args).unwrap();
-}
-
-#[test]
-fn push_to_db() {
-    insert_data();
 }
