@@ -35,9 +35,9 @@ pub struct GymtrackerArgs {
 pub enum MethodType {
     /// Print workout logs for user defined.
     Read { username: String },
-    // /// Create, or Insert workout log to database.
+    /// Create, or Insert workout log to database.
     Write {
-        /// User's full name, i.e First\Last
+        /// User's full name, i.e First\ Last
         username: String,
         /// Date of training session, i.e 00-00-0000
         date: String,
@@ -45,7 +45,7 @@ pub enum MethodType {
         time: String,
         /// Weight of user in lbs, i.e 000.0
         body_weight: f32,
-        /// Muscle's trained during session, i.e Back,\Biceps
+        /// Muscle's trained during session, i.e Back,\ Biceps
         muscle_group: String,
         /// Intensity of training session, range from 1-10
         intensity: u8,
