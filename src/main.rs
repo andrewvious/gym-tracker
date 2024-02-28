@@ -37,64 +37,20 @@ pub enum MethodType {
     Read { username: String },
     // /// Create, or Insert workout log to database.
     Write {
-        /// User's first name
+        /// User's full name, i.e First\Last
         username: String,
-        /// Date of training session
+        /// Date of training session, i.e 00-00-0000
         date: String,
-        /// time of training session
+        /// Time of training session, i.e 00:00-00:00
         time: String,
-        /// Weight of user
+        /// Weight of user in lbs, i.e 000.0
         body_weight: f32,
-        /// Muscle's trained during session
+        /// Muscle's trained during session, i.e Back,\Biceps
         muscle_group: String,
-        /// Intensity of training session
+        /// Intensity of training session, range from 1-10
         intensity: u8,
     },
 }
-
-// #[derive(Debug, Args, PartialEq)]
-// pub struct ReadCommand {
-//     #[clap(subcommand)]
-//     pub command: ReadSubcommand,
-// }
-
-// #[derive(Debug, Subcommand, PartialEq)]
-// pub enum ReadSubcommand {
-//     Read(ReadUser),
-// }
-
-// #[derive(Debug, Args, PartialEq)]
-// pub struct ReadUser {
-//     /// User first name, used as key for DB.
-//     pub name: String,
-// }
-
-// #[derive(Debug, Args, PartialEq)]
-// pub struct WriteCommand {
-//     #[clap(subcommand)]
-//     pub command: WriteSubcommand,
-// }
-
-// #[derive(Debug, Subcommand, PartialEq)]
-// pub enum WriteSubcommand {
-//     Write(WriteUser),
-// }
-
-// #[derive(Debug, Args, PartialEq)]
-// pub struct WriteUser {
-//     /// User's first name
-//     pub name: String,
-//     /// Date of training session
-//     pub date: String,
-//     /// time of training session
-//     pub time: String,
-//     /// Weight of user
-//     pub body_weight: f32,
-//     /// Muscle's trained during session
-//     pub muscle_group: String,
-//     /// Intensity of training session
-//     pub intensity: u8,
-// }
 
 #[derive(Debug, Clone, Copy, View, ViewSchema, PartialEq)]
 #[view(collection = WorkoutInputs, key = String, value = (String, String, f32, String, u8), name = "by-user-name")]
@@ -105,7 +61,7 @@ impl CollectionMapReduce for UserView {
         document: CollectionDocument<WorkoutInputs>,
     ) -> ViewMapResult<'doc, Self::View> {
         document.header.emit_key_and_value(
-            document.contents.user_first,
+            document.contents.username,
             (
                 document.contents.date,
                 document.contents.time,
@@ -121,11 +77,11 @@ impl CollectionMapReduce for UserView {
         mappings: &[ViewMappedValue<'_, Self>],
         _rereduce: bool,
     ) -> ReduceResult<Self::View> {
-        let mut user_first = &mappings[0].key;
+        let mut username = &mappings[0].key;
         let mut workout_info: &(String, String, f32, String, u8) = &mappings[0].value;
         for mapping in mappings.iter() {
-            if &mapping.key == user_first {
-                user_first = &mapping.key;
+            if &mapping.key == username {
+                username = &mapping.key;
                 workout_info = &mapping.value;
             }
         }
@@ -133,8 +89,8 @@ impl CollectionMapReduce for UserView {
     }
 }
 
-pub struct UserInputs {
-    user_first: String,
+struct UserInputs {
+    username: String,
     date: String,         //00-00-0000
     time: String,         //00:00-00:00
     body_weight: f32,     //000.0LBS ('merica)
@@ -145,7 +101,7 @@ pub struct UserInputs {
 #[derive(Collection, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[collection(name= "workout-data", views = [UserView])]
 pub struct WorkoutInputs {
-    user_first: String,
+    username: String,
     date: String,         //00-00-0000
     time: String,         //00:00-00:00
     body_weight: f32,     //000.0LBS ('merica)
@@ -156,7 +112,7 @@ pub struct WorkoutInputs {
 impl WorkoutInputs {
     pub fn insert<C: Connection>(
         connection: &C,
-        user_first: String,
+        username: String,
         date: String,
         time: String,
         body_weight: f32,
@@ -164,7 +120,7 @@ impl WorkoutInputs {
         intensity: u8,
     ) -> Result<(), bonsaidb::core::Error> {
         WorkoutInputs {
-            user_first,
+            username,
             date,
             time,
             body_weight,
@@ -182,7 +138,16 @@ fn open_storage(path: &String) -> Result<Storage> {
     )?)
 }
 
-fn insert_data() {
+fn insert_data(
+    UserInputs {
+        username,
+        date,
+        time,
+        body_weight,
+        muscle_group,
+        intensity,
+    }: UserInputs,
+) -> Result<()> {
     let storage_connection =
         open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
     let workout_connection = storage_connection
@@ -191,14 +156,16 @@ fn insert_data() {
 
     WorkoutInputs::insert(
         &workout_connection,
-        "Andrew O".to_string(),
-        "2-24-2024".to_string(),
-        "13:00-14:30".to_string(),
-        138.0,
-        "Chest, Triceps".to_string(),
-        4,
+        username,
+        date,
+        time,
+        body_weight,
+        muscle_group,
+        intensity,
     )
     .expect("Failed to insert into database. Check inputs.");
+    println!("Workout data has successfuly been inputed into the database.");
+    Ok(())
 }
 
 fn print_all_data(username: &str) -> Result<()> {
@@ -220,7 +187,7 @@ fn print_all_data(username: &str) -> Result<()> {
             muscle group trained: {}
             intensity of workout: {}
             ",
-            data.user_first,
+            data.username,
             data.date,
             data.time,
             data.body_weight,
@@ -243,7 +210,14 @@ fn run(args: GymtrackerArgs) {
             body_weight,
             muscle_group,
             intensity,
-        } => todo!(),
+        } => insert_data(UserInputs {
+            username,
+            date,
+            time,
+            body_weight,
+            muscle_group,
+            intensity,
+        }),
     }
     .unwrap();
 }
@@ -252,11 +226,6 @@ fn main() {
     let args = GymtrackerArgs::parse();
 
     run(args);
-}
-
-#[test]
-fn push_to_db() {
-    insert_data();
 }
 
 //Still looking for a way to `get` all data with this method.
@@ -272,10 +241,10 @@ fn get_latest_data(
         .last() //this is where I need to get full scope of all data inserted if possible.
         .expect("Found empty data for user inputed, insert data and try again.");
 
-    let user_first = &workout_doc.key;
+    let username = &workout_doc.key;
     let (date, time, body_weight, muscle_group, intensity) = &workout_doc.value;
     Ok((
-        user_first.to_string(),
+        username.to_string(),
         (
             date.to_string(),
             time.to_string(),
