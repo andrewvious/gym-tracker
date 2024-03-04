@@ -6,8 +6,8 @@ use bonsaidb::{
         connection::{Connection, StorageConnection},
         document::{CollectionDocument, Emit},
         schema::{
-            Collection, CollectionMapReduce, ReduceResult, SerializedCollection, SerializedView,
-            View, ViewMapResult, ViewMappedValue, ViewSchema,
+            Collection, CollectionMapReduce, ReduceResult, SerializedCollection, View,
+            ViewMapResult, ViewMappedValue, ViewSchema,
         },
     },
     local::{
@@ -129,23 +129,23 @@ impl CollectionMapReduce for DateView {
 }
 
 struct WriteInputsForCLI {
-    username: String,
-    date: String,         //00-00-0000
-    time: String,         //00:00-00:00
-    body_weight: f32,     //000.0LBS ('merica)
-    muscle_group: String, //Back, Bicep
-    intensity: u8,        //1-10 intensity of training (be real)
+    username: String,     //User's full name, i.e First\ Last
+    date: String,         //Date of Training session, i.e 00-00-0000
+    time: String,         //Time of Training session(Duration), i.e 00:00-00:00
+    body_weight: f32,     //Weight of user in lbs, i.e 000.0LBS ('merica)
+    muscle_group: String, //Muscle's trained during session, i.e Back, Bicep
+    intensity: u8,        //Intensity of training session, range from 1-10
 }
 
 #[derive(Collection, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[collection(name= "workout-data", views = [UserView, DateView])]
 pub struct WorkoutInputs {
     username: String,
-    date: String,         //00-00-0000
-    time: String,         //00:00-00:00
-    body_weight: f32,     //000.0LBS ('merica)
-    muscle_group: String, //Back, Bicep
-    intensity: u8,        //1-10 intensity of training (be real)
+    date: String,
+    time: String,
+    body_weight: f32,
+    muscle_group: String,
+    intensity: u8,
 }
 
 impl WorkoutInputs {
