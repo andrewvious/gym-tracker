@@ -34,7 +34,9 @@ pub struct GymtrackerArgs {
 #[derive(Debug, Subcommand, PartialEq)]
 pub enum MethodType {
     /// Print workout logs for user defined.
-    Read { username: String },
+    ReadLogs { username: String },
+    /// Print a workout log for date specified.
+    ReadDate { username: String, date: String },
     /// Create, or Insert workout log to database.
     Write {
         /// User's full name, i.e First\ Last
@@ -89,7 +91,44 @@ impl CollectionMapReduce for UserView {
     }
 }
 
-struct UserInputs {
+#[derive(Debug, Clone, Copy, View, ViewSchema, PartialEq)]
+#[view(collection = WorkoutInputs, key = String, value = (String, String, f32, String, u8), name = "by-date")]
+pub struct DateView;
+impl CollectionMapReduce for DateView {
+    fn map<'doc>(
+        &self,
+        document: CollectionDocument<WorkoutInputs>,
+    ) -> ViewMapResult<'doc, Self::View> {
+        document.header.emit_key_and_value(
+            document.contents.date,
+            (
+                document.contents.username,
+                document.contents.time,
+                document.contents.body_weight,
+                document.contents.muscle_group,
+                document.contents.intensity,
+            ),
+        )
+    }
+
+    fn reduce(
+        &self,
+        mappings: &[ViewMappedValue<'_, Self>],
+        _rereduce: bool,
+    ) -> ReduceResult<Self::View> {
+        let mut date = &mappings[0].key;
+        let mut workout_info: &(String, String, f32, String, u8) = &mappings[0].value;
+        for mapping in mappings.iter() {
+            if &mapping.key == date {
+                date = &mapping.key;
+                workout_info = &mapping.value;
+            }
+        }
+        Ok(workout_info.clone())
+    }
+}
+
+struct WriteInputsForCLI {
     username: String,
     date: String,         //00-00-0000
     time: String,         //00:00-00:00
@@ -99,7 +138,7 @@ struct UserInputs {
 }
 
 #[derive(Collection, Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[collection(name= "workout-data", views = [UserView])]
+#[collection(name= "workout-data", views = [UserView, DateView])]
 pub struct WorkoutInputs {
     username: String,
     date: String,         //00-00-0000
@@ -139,14 +178,14 @@ fn open_storage(path: &String) -> Result<Storage> {
 }
 
 fn insert_data(
-    UserInputs {
+    WriteInputsForCLI {
         username,
         date,
         time,
         body_weight,
         muscle_group,
         intensity,
-    }: UserInputs,
+    }: WriteInputsForCLI,
 ) -> Result<()> {
     let storage_connection =
         open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
@@ -198,11 +237,46 @@ fn print_all_data(username: &str) -> Result<()> {
     Ok(())
 }
 
-use crate::MethodType::{Read, Write};
+// Need to match user
+fn print_specific_day(username: &str, date: &str) -> Result<()> {
+    let storage_connection =
+        open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
+    let workout_db = storage_connection.database::<WorkoutInputs>("workout-data")?;
+
+    let date_specific_data = workout_db
+        .view::<DateView>()
+        .with_key(date)
+        .query_with_docs()?;
+    for mapping in &date_specific_data {
+        let data = WorkoutInputs::document_contents(mapping.document)?;
+        if username == mapping.value.0 {
+            println!(
+                "Retrieved workout tracked for user {}:
+
+            date: {}
+            time: {}
+            body weight: {}
+            muscle group trained: {}
+            intensity of workout: {}
+            ",
+                data.username,
+                data.date,
+                data.time,
+                data.body_weight,
+                data.muscle_group,
+                data.intensity
+            );
+        }
+    }
+    Ok(())
+}
+
+use crate::MethodType::{ReadDate, ReadLogs, Write};
 
 fn run(args: GymtrackerArgs) {
     match args.user_method {
-        Read { username } => print_all_data(&username),
+        ReadLogs { username } => print_all_data(&username),
+        ReadDate { username, date } => print_specific_day(&username, &date),
         Write {
             username,
             date,
@@ -210,7 +284,7 @@ fn run(args: GymtrackerArgs) {
             body_weight,
             muscle_group,
             intensity,
-        } => insert_data(UserInputs {
+        } => insert_data(WriteInputsForCLI {
             username,
             date,
             time,
@@ -226,31 +300,4 @@ fn main() {
     let args = GymtrackerArgs::parse();
 
     run(args);
-}
-
-//Still looking for a way to `get` all data with this method.
-#[allow(dead_code)]
-fn get_latest_data(
-    storage_connection: &Storage,
-) -> Result<(String, (String, String, f32, String, u8))> {
-    let workout_db = storage_connection.database::<WorkoutInputs>("workout-data")?;
-
-    let workout_view = UserView::entries(&workout_db).ascending().query()?;
-
-    let workout_doc = workout_view
-        .last() //this is where I need to get full scope of all data inserted if possible.
-        .expect("Found empty data for user inputed, insert data and try again.");
-
-    let username = &workout_doc.key;
-    let (date, time, body_weight, muscle_group, intensity) = &workout_doc.value;
-    Ok((
-        username.to_string(),
-        (
-            date.to_string(),
-            time.to_string(),
-            *body_weight,
-            muscle_group.to_string(),
-            *intensity,
-        ),
-    ))
 }
