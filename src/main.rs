@@ -16,6 +16,7 @@ use bonsaidb::{
     },
 };
 use clap::*;
+use prettytable::*;
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_DB_PATH: &str = "./gymtracker";
@@ -207,6 +208,8 @@ fn insert_data(
     Ok(())
 }
 
+extern crate prettytable;
+
 fn print_all_data(username: &str) -> Result<()> {
     let storage_connection =
         open_storage(&DEFAULT_DB_PATH.to_string()).expect("Failed to create new database.");
@@ -217,21 +220,21 @@ fn print_all_data(username: &str) -> Result<()> {
         .query_with_docs()?;
     for mapping in &user_data {
         let data = WorkoutInputs::document_contents(mapping.document)?;
-        println!(
-            "Retrieved workout tracked for user {}:
 
-            date: {}
-            time: {}
-            body weight: {}
-            muscle group trained: {}
-            intensity of workout: {}
-            ",
-            data.username,
-            data.date,
-            data.time,
-            data.body_weight,
-            data.muscle_group,
-            data.intensity
+        ptable!(
+            [
+                "Retrieved workouts tracked for:",
+                data.username,
+                "Date:",
+                data.date
+            ],
+            ["Time at gym:", data.time, "Body weight:", data.body_weight],
+            [
+                "Muscle group trained:",
+                data.muscle_group,
+                "Intensity of workout:",
+                data.intensity
+            ]
         );
     }
     Ok(())
@@ -250,21 +253,20 @@ fn print_specific_day(username: &str, date: &str) -> Result<()> {
     for mapping in &date_specific_data {
         let data = WorkoutInputs::document_contents(mapping.document)?;
         if username == mapping.value.0 {
-            println!(
-                "Retrieved workout tracked for user {}:
-
-            date: {}
-            time: {}
-            body weight: {}
-            muscle group trained: {}
-            intensity of workout: {}
-            ",
-                data.username,
-                data.date,
-                data.time,
-                data.body_weight,
-                data.muscle_group,
-                data.intensity
+            ptable!(
+                [
+                    "Retrieved workouts tracked for:",
+                    data.username,
+                    "Date:",
+                    data.date
+                ],
+                ["Time at gym:", data.time, "Body weight:", data.body_weight],
+                [
+                    "Muscle group trained:",
+                    data.muscle_group,
+                    "Intensity of workout:",
+                    data.intensity
+                ]
             );
         }
     }
